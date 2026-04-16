@@ -39,7 +39,9 @@ set(SQSTD_SOURCES
     sqstdlib/sqstdsystem.cpp
 )
 
-add_executable(squirrel_vm ${SQ_SOURCES} ${SQSTD_SOURCES})
+add_executable(squirrel_vm ${SQ_SOURCES} ${SQSTD_SOURCES}
+    bridge/sq_bridge_print.cpp
+)
 
 target_include_directories(squirrel_vm PRIVATE
     include
@@ -159,6 +161,13 @@ if(EMSCRIPTEN)
         "_sq_getlocal"
         "_malloc"
         "_free"
+        # Squirrel standard library registration
+        "_sqstd_register_mathlib"
+        "_sqstd_register_stringlib"
+        "_sqstd_register_bloblib"
+        "_sqstd_seterrorhandlers"
+        # C bridge: variadic printf wrapper + one-call setup
+        "_sq_bridge_setup"
     )
     string(JOIN "," EXPORTED_FUNCS_STR ${EXPORTED_FUNCTIONS})
 
