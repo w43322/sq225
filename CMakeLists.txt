@@ -154,6 +154,7 @@ if(EMSCRIPTEN)
         "_sq_tostring"
         "_sq_getsize"
         "_sq_next"
+        "_sq_remove"
         "_sq_setfreevariable"
         "_sq_getlocal"
         "_malloc"
