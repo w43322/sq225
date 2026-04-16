@@ -170,7 +170,7 @@ if(EMSCRIPTEN)
         "SHELL:-s MODULARIZE=1"
         "SHELL:-s EXPORT_NAME='SquirrelVM'"
         "SHELL:-s EXPORTED_FUNCTIONS=[${EXPORTED_FUNCS_STR}]"
-        "SHELL:-s EXPORTED_RUNTIME_METHODS=['ccall','cwrap','getValue','setValue','UTF8ToString','stringToUTF8','lengthBytesUTF8','addFunction','removeFunction']"
+        "SHELL:-s EXPORTED_RUNTIME_METHODS=['ccall','cwrap','getValue','setValue','UTF8ToString','stringToUTF8','lengthBytesUTF8','addFunction','removeFunction','HEAP8','HEAPU8','HEAP32','HEAPF32']"
         "SHELL:-s ALLOW_MEMORY_GROWTH=1"
         "SHELL:-s ALLOW_TABLE_GROWTH=1"
         "SHELL:-s NO_EXIT_RUNTIME=1"
