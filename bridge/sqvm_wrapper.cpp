@@ -97,6 +97,34 @@ emscripten::val SqVMWrapper::SqToVal(int idx) {
             }
             return emscripten::val(s);
         }
+        case OT_TABLE: {
+            emscripten::val obj = emscripten::val::object();
+            sq_push(vm_, idx);       // push table
+            sq_pushnull(vm_);        // push iterator
+            while (SQ_SUCCEEDED(sq_next(vm_, -2))) {
+                // stack: [..., table, iter, key, value]
+                if (sq_gettype(vm_, -2) == OT_STRING) {
+                    const SQChar *k;
+                    sq_getstring(vm_, -2, &k);
+                    obj.set(k, SqToVal(-1));
+                }
+                sq_pop(vm_, 2);      // pop key+value
+            }
+            sq_pop(vm_, 2);          // pop iterator+table
+            return obj;
+        }
+        case OT_ARRAY: {
+            SQInteger len = sq_getsize(vm_, idx);
+            emscripten::val arr = emscripten::val::array();
+            for (SQInteger i = 0; i < len; ++i) {
+                sq_pushinteger(vm_, i);
+                if (SQ_SUCCEEDED(sq_get(vm_, idx < 0 ? idx - 1 : idx))) {
+                    arr.call<void>("push", SqToVal(-1));
+                    sq_poptop(vm_);
+                }
+            }
+            return arr;
+        }
         case OT_NULL: return emscripten::val::null();
         default: return emscripten::val::undefined();
     }
@@ -117,6 +145,32 @@ void SqVMWrapper::ValToSq(emscripten::val val) {
     } else if (jsType == "string") {
         std::string s = val.as<std::string>();
         sq_pushstring(vm_, s.data(), s.size());
+    } else if (jsType == "function") {
+        SQInteger idx = static_cast<SQInteger>(callbacks_.size());
+        callbacks_.push_back(val);
+        sq_pushinteger(vm_, idx);
+        sq_newclosure(vm_, CallNative, 1);
+    } else if (jsType == "object" && !val.isNull()) {
+        bool isArray = emscripten::val::global("Array").call<bool>("isArray", val);
+
+        if (isArray) {
+            int len = val["length"].as<int>();
+            sq_newarray(vm_, 0);
+            for (int i = 0; i < len; ++i) {
+                ValToSq(val[i]);
+                sq_arrayappend(vm_, -2);
+            }
+        } else {
+            sq_newtable(vm_);
+            emscripten::val keys = emscripten::val::global("Object").call<emscripten::val>("keys", val);
+            int len = keys["length"].as<int>();
+            for (int i = 0; i < len; ++i) {
+                std::string k = keys[i].as<std::string>();
+                sq_pushstring(vm_, k.c_str(), k.size());
+                ValToSq(val[keys[i]]);
+                sq_newslot(vm_, -3, SQFalse);
+            }
+        }
     } else {
         sq_pushnull(vm_);
     }
@@ -233,24 +287,8 @@ void SqVMWrapper::set(const std::string &path, emscripten::val value) {
     if (key.empty()) return;
     // stack: [parent table]
 
-    std::string jsType = value.typeOf().as<std::string>();
-
     sq_pushstring(vm_, key.c_str(), key.size());
-
-    if (jsType == "function") {
-        // Register as native closure trampoline
-        SQInteger idx = static_cast<SQInteger>(callbacks_.size());
-        callbacks_.push_back(value);
-        sq_pushinteger(vm_, idx);
-        sq_newclosure(vm_, CallNative, 1);
-    } else if (jsType == "object" && !value.isNull()) {
-        // JS object (non-null) → create empty Squirrel table
-        sq_newtable(vm_);
-    } else {
-        // Basic type: int/float/bool/string/null
-        ValToSq(value);
-    }
-
+    ValToSq(value);
     sq_newslot(vm_, -3, SQFalse);
     sq_poptop(vm_); // pop parent table
 }
