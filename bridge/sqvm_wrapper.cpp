@@ -122,6 +122,41 @@ void SqVMWrapper::ValToSq(emscripten::val val) {
     }
 }
 
+// ── Path resolution ───────────────────────────────────────
+// "foo"       → pushes root table, returns "foo"
+// "A.B"       → pushes ::A on stack, returns "B"
+// "A.B.C"     → pushes ::A.B on stack, returns "C"
+// On failure  → returns "" (nothing pushed)
+
+std::string SqVMWrapper::ResolvePath(const std::string &path) {
+    auto dot = path.rfind('.');
+    if (dot == std::string::npos) {
+        // No dot — parent is root table
+        sq_pushroottable(vm_);
+        return path;
+    }
+
+    // Walk the chain: start at root, get each segment
+    sq_pushroottable(vm_);
+    size_t start = 0;
+    while (start < dot) {
+        size_t next = path.find('.', start);
+        if (next == std::string::npos || next > dot) next = dot;
+        std::string seg = path.substr(start, next - start);
+        sq_pushstring(vm_, seg.c_str(), seg.size());
+        if (SQ_FAILED(sq_get(vm_, -2))) {
+            sq_poptop(vm_); // pop whatever is on stack
+            return "";
+        }
+        sq_remove(vm_, -2); // remove parent, keep child
+        start = next + 1;
+    }
+
+    return path.substr(dot + 1);
+}
+
+// ── Constructor / Destructor ──────────────────────────────
+
 SqVMWrapper::SqVMWrapper() {
     vm_ = sq_open(1024);
     sq_setforeignptr(vm_, this);
@@ -133,7 +168,6 @@ SqVMWrapper::SqVMWrapper() {
     sqstd_register_stringlib(vm_);
     sq_poptop(vm_);
 
-    // Register engine API functions (createFromScript, shutdown, etc.)
     extern void register_engine_api(HSQUIRRELVM vm);
     register_engine_api(vm_);
 }
@@ -145,13 +179,13 @@ SqVMWrapper::~SqVMWrapper() {
     }
 }
 
-// ── Logger ─────────────────────────────────────────────
+// ── Logger ────────────────────────────────────────────────
 
 void SqVMWrapper::setLogger(emscripten::val loggerCb) {
     logger_ = loggerCb;
 }
 
-// ── Script execution ───────────────────────────────────
+// ── Script execution ──────────────────────────────────────
 
 bool SqVMWrapper::eval(const std::string &src, const std::string &name) {
     if (SQ_FAILED(sq_compilebuffer(vm_, src.c_str(), src.size(),
@@ -192,62 +226,65 @@ bool SqVMWrapper::loadBytecode(const std::string &src, const std::string &name) 
     return ok;
 }
 
-// ── Function registration ──────────────────────────────
+// ── Unified set/get ───────────────────────────────────────
 
-void SqVMWrapper::registerGlobalFunc(const std::string &name, emscripten::val func) {
-    // Store callback
-    SQInteger idx = static_cast<SQInteger>(callbacks_.size());
-    callbacks_.push_back(func);
+void SqVMWrapper::set(const std::string &path, emscripten::val value) {
+    std::string key = ResolvePath(path);
+    if (key.empty()) return;
+    // stack: [parent table]
 
-    sq_pushroottable(vm_);
-    sq_pushstring(vm_, name.data(), name.size());
+    std::string jsType = value.typeOf().as<std::string>();
 
-    // Push the trampoline as native closure with one free variable (the index)
-    sq_pushinteger(vm_, idx);
-    sq_newclosure(vm_, CallNative, 1);
+    sq_pushstring(vm_, key.c_str(), key.size());
+
+    if (jsType == "function") {
+        // Register as native closure trampoline
+        SQInteger idx = static_cast<SQInteger>(callbacks_.size());
+        callbacks_.push_back(value);
+        sq_pushinteger(vm_, idx);
+        sq_newclosure(vm_, CallNative, 1);
+    } else if (jsType == "object" && !value.isNull()) {
+        // JS object (non-null) → create empty Squirrel table
+        sq_newtable(vm_);
+    } else {
+        // Basic type: int/float/bool/string/null
+        ValToSq(value);
+    }
 
     sq_newslot(vm_, -3, SQFalse);
-    sq_poptop(vm_); // pop root table
+    sq_poptop(vm_); // pop parent table
 }
 
-// ── Global variables ───────────────────────────────────
+emscripten::val SqVMWrapper::get(const std::string &path) {
+    std::string key = ResolvePath(path);
+    if (key.empty()) return emscripten::val::undefined();
+    // stack: [parent table]
 
-void SqVMWrapper::setGlobalVar(const std::string &name, emscripten::val value) {
-    sq_pushroottable(vm_);
-    sq_pushstring(vm_, name.c_str(), name.size());
-    ValToSq(value);
-    sq_newslot(vm_, -3, SQFalse);
-    sq_poptop(vm_);
-}
-
-emscripten::val SqVMWrapper::getGlobalVar(const std::string &key) {
-    sq_pushroottable(vm_);
     sq_pushstring(vm_, key.c_str(), key.size());
     if (SQ_FAILED(sq_get(vm_, -2))) {
-        sq_poptop(vm_);
+        sq_poptop(vm_); // pop parent
         return emscripten::val::undefined();
     }
     emscripten::val result = SqToVal(-1);
-    sq_pop(vm_, 2);
+    sq_pop(vm_, 2); // pop value + parent
     return result;
 }
 
-// ── Stack helpers (for use inside callbacks) ───────────
+// ── Stack helpers ─────────────────────────────────────────
 
 int SqVMWrapper::getTop() {
     return sq_gettop(vm_);
 }
 
-// ── Embind ─────────────────────────────────────────────────
+// ── Embind ────────────────────────────────────────────────
 
 EMSCRIPTEN_BINDINGS(sqvm_wrapper) {
     emscripten::class_<SqVMWrapper>("SqVMWrapper")
         .constructor()
-        .function("setLogger",        &SqVMWrapper::setLogger)
-        .function("eval",             &SqVMWrapper::eval)
-        .function("loadBytecode",     &SqVMWrapper::loadBytecode)
-        .function("registerGlobalFunc", &SqVMWrapper::registerGlobalFunc)
-        .function("setGlobalVar",     &SqVMWrapper::setGlobalVar)
-        .function("getGlobalVar",     &SqVMWrapper::getGlobalVar)
-        .function("getTop",           &SqVMWrapper::getTop);
+        .function("setLogger",    &SqVMWrapper::setLogger)
+        .function("eval",         &SqVMWrapper::eval)
+        .function("loadBytecode", &SqVMWrapper::loadBytecode)
+        .function("set",          &SqVMWrapper::set)
+        .function("get",          &SqVMWrapper::get)
+        .function("getTop",       &SqVMWrapper::getTop);
 }

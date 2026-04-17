@@ -20,8 +20,8 @@ static void register_func(HSQUIRRELVM vm, const char *name, SQFUNCTION func) {
 }
 
 // ── getComponent(name) ────────────────────────────────────
-// Returns a fresh clone of the matching mock component table.
-// Looks up ::_Mock* globals by component name; defaults to _MockGenericComponent.
+// Returns a fresh clone of the matching component template table.
+// Looks up globals by component name; defaults to ::Generic.
 
 static SQInteger sq_getComponent(HSQUIRRELVM vm) {
     const SQChar *name = nullptr;
@@ -29,32 +29,29 @@ static SQInteger sq_getComponent(HSQUIRRELVM vm) {
         sq_getstring(vm, 2, &name);
     }
 
-    // Pick mock table name based on component name
-    const char *mockName = "_MockGenericComponent";
+    // Map component name to global table name.
+    // Specialized components have their own table; everything else uses Generic.
+    const char *tableName = "Generic";
     if (name) {
-        if (strcmp(name, "ResourceManager") == 0) mockName = "_MockResourceManager";
-        else if (strcmp(name, "SoundDriver") == 0) mockName = "_MockSoundDriver";
-        else if (strcmp(name, "Display") == 0) mockName = "_MockDisplay";
+        if (strcmp(name, "ResourceManager") == 0) tableName = "ResourceManager";
+        else if (strcmp(name, "SoundDriver") == 0) tableName = "SoundDriver";
+        else if (strcmp(name, "Display") == 0) tableName = "Display";
     }
 
-    // Fetch the mock from root table
+    // Fetch from root table
     sq_pushroottable(vm);
-    sq_pushstring(vm, mockName, -1);
+    sq_pushstring(vm, tableName, -1);
     if (SQ_FAILED(sq_get(vm, -2))) {
-        // Mock not found — return empty table
         sq_poptop(vm);       // pop root table
         sq_newtable(vm);
         return 1;
     }
-    // stack: [root, mockTable]
-    // Clone it so each caller gets a fresh mutable copy
+    // Clone so each caller gets a fresh mutable copy
     if (SQ_FAILED(sq_clone(vm, -1))) {
-        // clone failed, return the original
-        sq_remove(vm, -2);   // remove root table
+        sq_remove(vm, -2);
         return 1;
     }
-    // stack: [root, mockTable, clone]
-    sq_remove(vm, -2);       // remove original mockTable
+    sq_remove(vm, -2);       // remove original
     sq_remove(vm, -2);       // remove root table
     return 1;
 }

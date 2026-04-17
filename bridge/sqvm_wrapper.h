@@ -13,30 +13,32 @@ class SqVMWrapper {
     emscripten::val SqToVal(int idx);
     void ValToSq(emscripten::val val);
 
+    // Resolve dotted path "A.B.C" → push parent table, return last key.
+    // Returns empty string on failure (parent not found).
+    std::string ResolvePath(const std::string &path);
+
 public:
     SqVMWrapper();
     ~SqVMWrapper();
-
-    // ── Logger ─────────────────────────────────────────────
 
     void setLogger(emscripten::val loggerCb);
 
     // ── Script execution ───────────────────────────────────
 
     bool eval(const std::string &src, const std::string &name);
-
     bool loadBytecode(const std::string &src, const std::string &name);
 
-    // ── Function registration ──────────────────────────────
+    // ── Unified get/set ────────────────────────────────────
+    // Path supports dots: "foo" operates on root table,
+    // "System.GetTime" operates on ::System table.
+    // set() auto-detects: function → native closure trampoline,
+    //                     object (non-null) → new table,
+    //                     other → basic type (int/float/bool/string/null).
 
-    void registerGlobalFunc(const std::string &name, emscripten::val func);
+    void set(const std::string &path, emscripten::val value);
+    emscripten::val get(const std::string &path);
 
-    // ── Global variables ───────────────────────────────────
-
-    void setGlobalVar(const std::string &name, emscripten::val value);
-    emscripten::val getGlobalVar(const std::string &key);
-
-    // ── Stack helpers (for use inside callbacks) ───────────
+    // ── Stack helpers ──────────────────────────────────────
 
     int getTop();
 };
