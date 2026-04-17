@@ -74,14 +74,14 @@ emscripten::val SqVMWrapper::SqToVal(int idx) {
             if (SQ_FAILED(sq_getinteger(vm_, idx, &v))) {
                 return emscripten::val::undefined();
             }
-            return emscripten::val(static_cast<int>(v));
+            return emscripten::val(v);
         }
         case OT_FLOAT: {
             SQFloat v;
             if (SQ_FAILED(sq_getfloat(vm_, idx, &v))) {
                 return emscripten::val::undefined();
             }
-            return emscripten::val(static_cast<float>(v));
+            return emscripten::val(v);
         }
         case OT_BOOL: {
             SQBool v;
@@ -103,11 +103,7 @@ emscripten::val SqVMWrapper::SqToVal(int idx) {
             sq_pushnull(vm_);        // push iterator
             while (SQ_SUCCEEDED(sq_next(vm_, -2))) {
                 // stack: [..., table, iter, key, value]
-                if (sq_gettype(vm_, -2) == OT_STRING) {
-                    const SQChar *k;
-                    sq_getstring(vm_, -2, &k);
-                    obj.set(k, SqToVal(-1));
-                }
+                obj.set(SqToVal(-2), SqToVal(-1));
                 sq_pop(vm_, 2);      // pop key+value
             }
             sq_pop(vm_, 2);          // pop iterator+table
@@ -115,11 +111,11 @@ emscripten::val SqVMWrapper::SqToVal(int idx) {
         }
         case OT_ARRAY: {
             SQInteger len = sq_getsize(vm_, idx);
-            emscripten::val arr = emscripten::val::array();
+            emscripten::val arr = emscripten::val::global("Array").new_(len);
             for (SQInteger i = 0; i < len; ++i) {
                 sq_pushinteger(vm_, i);
                 if (SQ_SUCCEEDED(sq_get(vm_, idx < 0 ? idx - 1 : idx))) {
-                    arr.call<void>("push", SqToVal(-1));
+                    arr.set(i, SqToVal(-1));
                     sq_poptop(vm_);
                 }
             }
@@ -152,7 +148,6 @@ void SqVMWrapper::ValToSq(emscripten::val val) {
         sq_newclosure(vm_, CallNative, 1);
     } else if (jsType == "object" && !val.isNull()) {
         bool isArray = emscripten::val::global("Array").call<bool>("isArray", val);
-
         if (isArray) {
             int len = val["length"].as<int>();
             sq_newarray(vm_, 0);
@@ -162,12 +157,13 @@ void SqVMWrapper::ValToSq(emscripten::val val) {
             }
         } else {
             sq_newtable(vm_);
-            emscripten::val keys = emscripten::val::global("Object").call<emscripten::val>("keys", val);
-            int len = keys["length"].as<int>();
+            emscripten::val entries = emscripten::val::global("Object").call<emscripten::val>("entries", val);
+            int len = entries["length"].as<int>();
             for (int i = 0; i < len; ++i) {
-                std::string k = keys[i].as<std::string>();
-                sq_pushstring(vm_, k.c_str(), k.size());
-                ValToSq(val[keys[i]]);
+                emscripten::val entry = entries[i];
+                std::string k = entry[0].as<std::string>();
+                sq_pushstring(vm_, k.data(), k.size());
+                ValToSq(entry[1]);
                 sq_newslot(vm_, -3, SQFalse);
             }
         }
