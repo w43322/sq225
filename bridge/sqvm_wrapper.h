@@ -5,7 +5,7 @@
 
 class SqVMWrapper {
     HSQUIRRELVM vm_ = nullptr;
-    emscripten::val logger_;
+    emscripten::val logger_ = emscripten::val::global("console")["log"];
     std::vector<emscripten::val> callbacks_;
 
     static void PrintFunc(HSQUIRRELVM vm, const SQChar *fmt, ...);

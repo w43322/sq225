@@ -7,6 +7,7 @@
 
 #include <squirrel.h>
 #include <cstdio>
+#include <cstring>
 
 // ── Helper: register a native closure in the root table ────
 
@@ -18,32 +19,43 @@ static void register_func(HSQUIRRELVM vm, const char *name, SQFUNCTION func) {
     sq_poptop(vm); // pop root table
 }
 
-// ── createFromScript(componentId, classRef = null) ─────────
-// If classRef is a class, instantiate it. Otherwise return empty table.
+// ── getComponent(name) ────────────────────────────────────
+// Returns a fresh clone of the matching mock component table.
+// Looks up ::_Mock* globals by component name; defaults to _MockGenericComponent.
 
-static SQInteger sq_createFromScript(HSQUIRRELVM vm) {
-    SQInteger top = sq_gettop(vm);
-    printf("[engine_api] createFromScript called, top=%d\n", top);
-
-    if (top >= 3 && sq_gettype(vm, 3) == OT_CLASS) {
-        printf("[engine_api] createFromScript: instantiating class\n");
-        // Call the class as a constructor: classRef()
-        // This creates the instance AND calls the constructor.
-        sq_push(vm, 3);             // push class (acts as closure)
-        sq_pushroottable(vm);       // push 'this' for the call
-        if (SQ_FAILED(sq_call(vm, 1, SQTrue, SQTrue))) {
-            printf("[engine_api] createFromScript: sq_call FAILED\n");
-            sq_poptop(vm);
-            sq_pushnull(vm);
-            return 1;
-        }
-        printf("[engine_api] createFromScript: success, type=%d\n", sq_gettype(vm, -1));
-        sq_remove(vm, -2);
-        return 1;
+static SQInteger sq_getComponent(HSQUIRRELVM vm) {
+    const SQChar *name = nullptr;
+    if (sq_gettop(vm) >= 2 && sq_gettype(vm, 2) == OT_STRING) {
+        sq_getstring(vm, 2, &name);
     }
 
-    printf("[engine_api] createFromScript: no class, returning table\n");
-    sq_newtable(vm);
+    // Pick mock table name based on component name
+    const char *mockName = "_MockGenericComponent";
+    if (name) {
+        if (strcmp(name, "ResourceManager") == 0) mockName = "_MockResourceManager";
+        else if (strcmp(name, "SoundDriver") == 0) mockName = "_MockSoundDriver";
+        else if (strcmp(name, "Display") == 0) mockName = "_MockDisplay";
+    }
+
+    // Fetch the mock from root table
+    sq_pushroottable(vm);
+    sq_pushstring(vm, mockName, -1);
+    if (SQ_FAILED(sq_get(vm, -2))) {
+        // Mock not found — return empty table
+        sq_poptop(vm);       // pop root table
+        sq_newtable(vm);
+        return 1;
+    }
+    // stack: [root, mockTable]
+    // Clone it so each caller gets a fresh mutable copy
+    if (SQ_FAILED(sq_clone(vm, -1))) {
+        // clone failed, return the original
+        sq_remove(vm, -2);   // remove root table
+        return 1;
+    }
+    // stack: [root, mockTable, clone]
+    sq_remove(vm, -2);       // remove original mockTable
+    sq_remove(vm, -2);       // remove root table
     return 1;
 }
 
@@ -111,10 +123,50 @@ static SQInteger sq_RegisterObject(HSQUIRRELVM vm) {
     return 0;
 }
 
+// ── loadFromScript(component, scriptClass) ─────────────────
+// Copy all fields and methods from scriptClass onto the component table.
+// This is the core of the engine's script-to-component binding:
+// getComponent() creates a native component (table), loadFromScript()
+// populates it with the Squirrel class's members so it can act as that class.
+
+static SQInteger sq_loadFromScript(HSQUIRRELVM vm) {
+    SQInteger top = sq_gettop(vm);
+    // stack: [this(1), component(2), scriptClass(3)]
+    if (top < 3) {
+        sq_pushbool(vm, SQTrue);
+        return 1;
+    }
+
+    SQObjectType classType = sq_gettype(vm, 3);
+    if (classType != OT_CLASS && classType != OT_TABLE) {
+        // Not a class or table, nothing to copy
+        sq_pushbool(vm, SQTrue);
+        return 1;
+    }
+
+    // Iterate the class/table and copy all members onto the component
+    sq_push(vm, 3);           // push class to iterate
+    sq_pushnull(vm);           // push null iterator
+    while (SQ_SUCCEEDED(sq_next(vm, -2))) {
+        // stack: [..., class, iterator, key, value]
+        sq_push(vm, 2);       // push component
+        sq_push(vm, -3);      // push key (copy)
+        sq_push(vm, -3);      // push value (copy)
+        sq_newslot(vm, -3, SQFalse);  // component[key] <- value
+        sq_poptop(vm);        // pop component
+        sq_pop(vm, 2);        // pop key and value
+    }
+    sq_pop(vm, 2);            // pop iterator and class
+
+    sq_pushbool(vm, SQTrue);
+    return 1;
+}
+
 // ── Registration ───────────────────────────────────────────
 
 void register_engine_api(HSQUIRRELVM vm) {
-    register_func(vm, "createFromScript",  sq_createFromScript);
+    register_func(vm, "getComponent",      sq_getComponent);
+    register_func(vm, "loadFromScript",    sq_loadFromScript);
     register_func(vm, "shutdown",          sq_shutdown);
     register_func(vm, "setIdentificator",  sq_setIdentificator);
     register_func(vm, "getIdentificator",  sq_getIdentificator);

@@ -28,7 +28,7 @@ void SqVMWrapper::PrintFunc(HSQUIRRELVM vm, const SQChar *fmt, ...) {
     }
     va_end(args);
     buff.resize(n);
-    if (!self->logger_.isNull()) {
+    if (self->logger_.typeOf().as<std::string>() == "function") {
         self->logger_(buff);
     }
 };
