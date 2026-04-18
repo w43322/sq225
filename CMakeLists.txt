@@ -69,5 +69,6 @@ if(EMSCRIPTEN)
         "SHELL:-s NO_EXIT_RUNTIME=1"
         "SHELL:-s ENVIRONMENT='web'"
         "SHELL:-s FILESYSTEM=1"
+        "SHELL:-s EXPORTED_RUNTIME_METHODS=['FS']"
     )
 endif()
