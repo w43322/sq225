@@ -58,11 +58,11 @@ static bool pushDelegate(HSQUIRRELVM vm, SQInteger idx) {
 
 // ── Metamethods for component userdata ────────────────────
 
-// _set(key, val): store in delegate table
+// _set(key, val): store in delegate table.
+// Without this, `component.field = value` fails on userdata.
 static SQInteger meta_set(HSQUIRRELVM vm) {
     // stack: [userdata(1), key(2), val(3)]
     if (!pushDelegate(vm, 1)) return SQ_ERROR;
-    // stack: [..., delegate]
     sq_push(vm, 2);  // key
     sq_push(vm, 3);  // val
     sq_rawset(vm, -3);
@@ -70,40 +70,7 @@ static SQInteger meta_set(HSQUIRRELVM vm) {
     return 0;
 }
 
-// _newslot(key, val): create new slot in delegate table
-static SQInteger meta_newslot(HSQUIRRELVM vm) {
-    // stack: [userdata(1), key(2), val(3)]
-    if (!pushDelegate(vm, 1)) return SQ_ERROR;
-    sq_push(vm, 2);  // key
-    sq_push(vm, 3);  // val
-    sq_newslot(vm, -3, SQFalse);
-    sq_poptop(vm);   // pop delegate
-    return 0;
-}
-
-// _nexti(prev): iterate delegate table entries
-static SQInteger meta_nexti(HSQUIRRELVM vm) {
-    // stack: [userdata(1), prev(2)]
-    if (!pushDelegate(vm, 1)) {
-        sq_pushnull(vm);
-        return 1;
-    }
-    // stack: [..., delegate]
-    sq_push(vm, 2);  // push prev iterator
-    if (SQ_SUCCEEDED(sq_next(vm, -2))) {
-        // stack: [..., delegate, iter, key, val]
-        // Return the key as the new iterator position
-        sq_remove(vm, -1);  // remove val
-        sq_remove(vm, -2);  // remove old iter
-        sq_remove(vm, -2);  // remove delegate
-        return 1;           // return key
-    }
-    sq_poptop(vm);   // pop delegate
-    sq_pushnull(vm); // no more items
-    return 1;
-}
-
-// _tostring(): return "(component: <entityId>)"
+// _tostring(): readable representation for debugging
 static SQInteger meta_tostring(HSQUIRRELVM vm) {
     uint32_t id = getEntityId(vm, 1);
     char buf[64];
@@ -196,8 +163,6 @@ static void createComponent(HSQUIRRELVM vm, const char *typeName) {
 
     // Metamethods
     add_method(vm, delegateIdx, "_set", meta_set);
-    add_method(vm, delegateIdx, "_newslot", meta_newslot);
-    add_method(vm, delegateIdx, "_nexti", meta_nexti);
     add_method(vm, delegateIdx, "_tostring", meta_tostring);
 
     // Component child registry
