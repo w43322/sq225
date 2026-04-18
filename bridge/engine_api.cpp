@@ -186,7 +186,26 @@ static void createComponent(HSQUIRRELVM vm, const char *templateName) {
     sq_newtable(vm);
     SQInteger delegateIdx = sq_gettop(vm);
 
-    // Store entityId and type as readable slots
+    // 1. Copy ALL template methods first
+    sq_pushroottable(vm);
+    sq_pushstring(vm, templateName, -1);
+    if (SQ_SUCCEEDED(sq_get(vm, -2))) {
+        // stack: [userdata, delegate, root, template]
+        sq_pushnull(vm);
+        while (SQ_SUCCEEDED(sq_next(vm, -2))) {
+            // stack: [..., template, iter, key, val]
+            sq_push(vm, delegateIdx);
+            sq_push(vm, -3);  // key
+            sq_push(vm, -3);  // val
+            sq_newslot(vm, -3, SQFalse);
+            sq_poptop(vm);    // pop delegate ref
+            sq_pop(vm, 2);    // pop key+val
+        }
+        sq_pop(vm, 2);        // pop iterator + template
+    }
+    sq_poptop(vm); // pop root
+
+    // 2. Override with our metadata and methods (overwrites any template slots with same name)
     sq_pushstring(vm, "__entityId", -1);
     sq_pushinteger(vm, entityId);
     sq_newslot(vm, delegateIdx, SQFalse);
@@ -195,54 +214,25 @@ static void createComponent(HSQUIRRELVM vm, const char *templateName) {
     sq_pushstring(vm, templateName, -1);
     sq_newslot(vm, delegateIdx, SQFalse);
 
-    // Add metamethods
+    // Metamethods
     add_method(vm, delegateIdx, "_set", meta_set);
     add_method(vm, delegateIdx, "_newslot", meta_newslot);
     add_method(vm, delegateIdx, "_nexti", meta_nexti);
     add_method(vm, delegateIdx, "_tostring", meta_tostring);
 
-    // Add component methods
+    // Component child registry
     add_method(vm, delegateIdx, "RegisterObject", sq_comp_RegisterObject);
     add_method(vm, delegateIdx, "UnregisterObject", sq_comp_UnregisterObject);
     add_method(vm, delegateIdx, "GetObject", sq_comp_GetObject);
 
-    // Create _objects sub-table
     sq_pushstring(vm, "_objects", -1);
     sq_newtable(vm);
     sq_newslot(vm, delegateIdx, SQFalse);
 
-    // Copy template methods from ::Generic (or specialized template) onto delegate
-    sq_pushroottable(vm);
-    sq_pushstring(vm, templateName, -1);
-    if (SQ_SUCCEEDED(sq_get(vm, -2))) {
-        // stack: [userdata, delegate, root, template]
-        sq_pushnull(vm);
-        while (SQ_SUCCEEDED(sq_next(vm, -2))) {
-            // stack: [..., template, iter, key, val]
-            // Only copy if key doesn't already exist in delegate
-            sq_push(vm, -2);  // key
-            sq_rawget(vm, delegateIdx);
-            if (sq_gettype(vm, -1) == OT_NULL) {
-                // Not in delegate yet — copy
-                sq_poptop(vm); // pop null
-                sq_push(vm, delegateIdx);
-                sq_push(vm, -3); // key
-                sq_push(vm, -3); // val
-                sq_newslot(vm, -3, SQFalse);
-                sq_poptop(vm); // pop delegate ref
-            } else {
-                sq_poptop(vm); // pop existing value
-            }
-            sq_pop(vm, 2); // pop key+val from next
-        }
-        sq_pop(vm, 2); // pop iterator + template
-    }
-    sq_poptop(vm); // pop root
-
-    // Set delegate on userdata
+    // 3. Set delegate on userdata
     // stack: [userdata, delegate]
     sq_setdelegate(vm, -2);
-    // stack: [userdata] — ready to return
+    // stack: [userdata]
 }
 
 // ── getComponent(name) ────────────────────────────────────
