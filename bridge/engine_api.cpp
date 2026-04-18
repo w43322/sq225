@@ -13,7 +13,6 @@
 
 #include <squirrel.h>
 #include <cstdio>
-#include <cstring>
 
 static uint32_t s_nextEntityId = 1;
 
@@ -174,7 +173,7 @@ static SQInteger sq_comp_GetObject(HSQUIRRELVM vm) {
 
 // ── createComponent: build userdata + delegate ────────────
 
-static void createComponent(HSQUIRRELVM vm, const char *templateName) {
+static void createComponent(HSQUIRRELVM vm, const char *typeName) {
     uint32_t entityId = s_nextEntityId++;
 
     // Create userdata with entityId
@@ -186,32 +185,13 @@ static void createComponent(HSQUIRRELVM vm, const char *templateName) {
     sq_newtable(vm);
     SQInteger delegateIdx = sq_gettop(vm);
 
-    // 1. Copy ALL template methods first
-    sq_pushroottable(vm);
-    sq_pushstring(vm, templateName, -1);
-    if (SQ_SUCCEEDED(sq_get(vm, -2))) {
-        // stack: [userdata, delegate, root, template]
-        sq_pushnull(vm);
-        while (SQ_SUCCEEDED(sq_next(vm, -2))) {
-            // stack: [..., template, iter, key, val]
-            sq_push(vm, delegateIdx);
-            sq_push(vm, -3);  // key
-            sq_push(vm, -3);  // val
-            sq_newslot(vm, -3, SQFalse);
-            sq_poptop(vm);    // pop delegate ref
-            sq_pop(vm, 2);    // pop key+val
-        }
-        sq_pop(vm, 2);        // pop iterator + template
-    }
-    sq_poptop(vm); // pop root
-
-    // 2. Override with our metadata and methods (overwrites any template slots with same name)
+    // Metadata
     sq_pushstring(vm, "__entityId", -1);
     sq_pushinteger(vm, entityId);
     sq_newslot(vm, delegateIdx, SQFalse);
 
     sq_pushstring(vm, "__type", -1);
-    sq_pushstring(vm, templateName, -1);
+    sq_pushstring(vm, typeName, -1);
     sq_newslot(vm, delegateIdx, SQFalse);
 
     // Metamethods
@@ -229,7 +209,7 @@ static void createComponent(HSQUIRRELVM vm, const char *templateName) {
     sq_newtable(vm);
     sq_newslot(vm, delegateIdx, SQFalse);
 
-    // 3. Set delegate on userdata
+    // Set delegate on userdata
     // stack: [userdata, delegate]
     sq_setdelegate(vm, -2);
     // stack: [userdata]
@@ -238,19 +218,12 @@ static void createComponent(HSQUIRRELVM vm, const char *templateName) {
 // ── getComponent(name) ────────────────────────────────────
 
 static SQInteger sq_getComponent(HSQUIRRELVM vm) {
-    const SQChar *name = nullptr;
+    const SQChar *name = "Unknown";
     if (sq_gettop(vm) >= 2 && sq_gettype(vm, 2) == OT_STRING) {
         sq_getstring(vm, 2, &name);
     }
 
-    const char *templateName = "Generic";
-    if (name) {
-        if (strcmp(name, "ResourceManager") == 0) templateName = "ResourceManager";
-        else if (strcmp(name, "SoundDriver") == 0) templateName = "SoundDriver";
-        else if (strcmp(name, "Display") == 0) templateName = "Display";
-    }
-
-    createComponent(vm, templateName);
+    createComponent(vm, name);
     return 1;
 }
 
