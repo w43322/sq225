@@ -70,15 +70,6 @@ static SQInteger meta_set(HSQUIRRELVM vm) {
     return 0;
 }
 
-// _tostring(): readable representation for debugging
-static SQInteger meta_tostring(HSQUIRRELVM vm) {
-    uint32_t id = getEntityId(vm, 1);
-    char buf[64];
-    snprintf(buf, sizeof(buf), "(component: %u)", id);
-    sq_pushstring(vm, buf, -1);
-    return 1;
-}
-
 // ── Component child registry: RegisterObject / UnregisterObject / GetObject ──
 // Operate on delegate._objects sub-table.
 
@@ -163,7 +154,6 @@ static void createComponent(HSQUIRRELVM vm, const char *typeName) {
 
     // Metamethods
     add_method(vm, delegateIdx, "_set", meta_set);
-    add_method(vm, delegateIdx, "_tostring", meta_tostring);
 
     // Component child registry
     add_method(vm, delegateIdx, "RegisterObject", sq_comp_RegisterObject);
