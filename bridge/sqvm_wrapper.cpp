@@ -122,6 +122,16 @@ emscripten::val SqVMWrapper::SqToVal(int idx) {
             return arr;
         }
         case OT_NULL: return emscripten::val::null();
+        case OT_USERDATA: {
+            SQUserPointer p;
+            if (SQ_SUCCEEDED(sq_getuserdata(vm_, idx, &p, nullptr))) {
+                uint32_t id = *static_cast<uint32_t*>(p);
+                emscripten::val obj = emscripten::val::object();
+                obj.set("__entityId", emscripten::val(id));
+                return obj;
+            }
+            return emscripten::val::undefined();
+        }
         default: return emscripten::val::undefined();
     }
 }
