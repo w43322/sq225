@@ -10,6 +10,7 @@
 #include <emscripten/bind.h>
 #include <sqstdaux.h>
 #include <sqstdblob.h>
+#include <sqstdio.h>
 #include <sqstdmath.h>
 #include <sqstdstring.h>
 
@@ -224,6 +225,7 @@ SqVMWrapper::SqVMWrapper() {
     sqstd_seterrorhandlers(vm_);
     sq_pushroottable(vm_);
     sqstd_register_bloblib(vm_);
+    sqstd_register_iolib(vm_);
     sqstd_register_mathlib(vm_);
     sqstd_register_stringlib(vm_);
     sq_poptop(vm_);

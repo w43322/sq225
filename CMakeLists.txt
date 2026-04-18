@@ -68,6 +68,6 @@ if(EMSCRIPTEN)
         "SHELL:-s ALLOW_TABLE_GROWTH=1"
         "SHELL:-s NO_EXIT_RUNTIME=1"
         "SHELL:-s ENVIRONMENT='web'"
-        "SHELL:-s FILESYSTEM=0"
+        "SHELL:-s FILESYSTEM=1"
     )
 endif()
