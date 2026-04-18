@@ -59,22 +59,6 @@ static bool pushDelegate(HSQUIRRELVM vm, SQInteger idx) {
 
 // ── Metamethods for component userdata ────────────────────
 
-// Noop function returned by _get for unknown keys.
-// Accepts any number of args, returns null.
-static SQInteger noop_func(HSQUIRRELVM vm) {
-    (void)vm;
-    sq_pushnull(vm);
-    return 1;
-}
-
-// _get(key): called when key not found in delegate.
-// Returns a noop function so unknown method calls don't crash.
-static SQInteger meta_get(HSQUIRRELVM vm) {
-    // stack: [userdata(1), key(2)]
-    sq_newclosure(vm, noop_func, 0);
-    return 1;
-}
-
 // _set(key, val): store in delegate table
 static SQInteger meta_set(HSQUIRRELVM vm) {
     // stack: [userdata(1), key(2), val(3)]
@@ -231,7 +215,6 @@ static void createComponent(HSQUIRRELVM vm, const char *templateName) {
     sq_newslot(vm, delegateIdx, SQFalse);
 
     // Metamethods
-    add_method(vm, delegateIdx, "_get", meta_get);
     add_method(vm, delegateIdx, "_set", meta_set);
     add_method(vm, delegateIdx, "_newslot", meta_newslot);
     add_method(vm, delegateIdx, "_nexti", meta_nexti);
